@@ -406,7 +406,9 @@
       <option value="netease">网易云音乐</option>
       <option value="qq">QQ音乐</option>
     </select>
-    <small>API Key 仅存储在浏览器本地，不会上传到任何服务器。</small>
+    <label>Worker URL（可选，实现歌曲直达）</label>
+    <input type="text" id="workerUrl" placeholder="https://clear-music.xxx.workers.dev" onchange="saveSettings()">
+    <small>API Key 仅存储在浏览器本地。配置 Worker 后"去听"直达歌曲详情页。</small>
   </div>
 
   <p class="footer">Powered by Claude / DeepSeek</p>
@@ -422,11 +424,13 @@ function loadSettings() {
   const model = localStorage.getItem('dj_model') || 'deepseek-v4-pro';
   const platform = localStorage.getItem('dj_platform') || 'netease';
   const customUrl = localStorage.getItem('dj_custom_url') || '';
+  const workerUrl = localStorage.getItem('dj_worker_url') || '';
   document.getElementById('apiEndpoint').value = ep;
   document.getElementById('apiKey').value = key;
   document.getElementById('model').value = model;
   document.getElementById('musicPlatform').value = platform;
   document.getElementById('customUrl').value = customUrl;
+  document.getElementById('workerUrl').value = workerUrl;
   if (ep === 'custom') {
     document.getElementById('customUrlLabel').style.display = 'block';
     document.getElementById('customUrl').style.display = 'block';
@@ -440,6 +444,7 @@ function saveSettings() {
   localStorage.setItem('dj_model', document.getElementById('model').value);
   localStorage.setItem('dj_platform', document.getElementById('musicPlatform').value);
   localStorage.setItem('dj_custom_url', document.getElementById('customUrl').value);
+  localStorage.setItem('dj_worker_url', document.getElementById('workerUrl').value);
 
   const isCustom = ep === 'custom';
   document.getElementById('customUrlLabel').style.display = isCustom ? 'block' : 'none';
@@ -564,13 +569,24 @@ function getListenUrl(song, artist) {
   return webUrl;
 }
 
-function renderResults(text) {
-  // Remove any leading/trailing non-recommendation content
+async function resolveSongUrl(song, artist) {
+  const workerUrl = localStorage.getItem('dj_worker_url') || '';
+  if (!workerUrl) return getListenUrl(song, artist);
+  try {
+    const platform = localStorage.getItem('dj_platform') || 'netease';
+    const resp = await fetch(`${workerUrl}/api/search?platform=${platform}&song=${encodeURIComponent(song)}&artist=${encodeURIComponent(artist)}`);
+    const data = await resp.json();
+    if (data.found && data.url) return data.url;
+  } catch (e) {
+    console.error('Worker search failed:', e);
+  }
+  return getListenUrl(song, artist);
+}
+
+async function renderResults(text) {
   let cleaned = text;
-  // Try to find first recommendation
   const reasonIdx = cleaned.indexOf('推荐理由');
   if (reasonIdx > 0) cleaned = cleaned.substring(reasonIdx);
-  // Remove trailing explanations
   const lastArtistIdx = cleaned.lastIndexOf('歌手');
   if (lastArtistIdx >= 0) {
     const afterArtist = cleaned.substring(lastArtistIdx);
@@ -581,9 +597,9 @@ function renderResults(text) {
   }
 
   const blocks = cleaned.split(/\n---\n|^---\n|\n---$|---/).map(b => b.trim()).filter(b => b.length > 5);
-  let html = '';
-  let debugRaw = '';
 
+  // 解析所有卡片
+  const cards = [];
   for (const block of blocks) {
     const lines = block.split('\n').filter(l => l.trim());
     let reason = '', song = '', artist = '';
@@ -598,23 +614,39 @@ function renderResults(text) {
       }
     }
     if (reason && song && artist) {
-      const url = getListenUrl(song, artist);
-      html += `<div class="card">
-        <div class="reason">${reason}</div>
-        <div class="song">${song}</div>
-        <div class="artist">${artist}</div>
-        <a class="listen-btn" href="${url}" target="_blank" rel="noopener">▶ 去听</a>
-      </div>`;
-    } else {
-      debugRaw += block.substring(0, 200) + '\\n---\\n';
+      cards.push({ reason, song, artist });
     }
   }
-  if (!html) {
-    html = '<div class="error">解析推荐结果失败<br><br><small style="color:#6b6b7b;">API 返回原文：<br>' +
+
+  if (!cards.length) {
+    document.getElementById('results').innerHTML =
+      '<div class="error">解析推荐结果失败<br><br><small style="color:#6b6b7b;">API 返回原文：<br>' +
       text.replace(/</g, '&lt;').replace(/\n/g, '<br>').substring(0, 500) +
       '</small></div>';
+    return;
+  }
+
+  // 立即渲染卡片（带 loading 按钮）
+  let html = '';
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    html += `<div class="card" id="card-${i}">
+      <div class="reason">${c.reason}</div>
+      <div class="song">${c.song}</div>
+      <div class="artist">${c.artist}</div>
+      <span class="listen-btn-loading" id="btn-${i}">▶ 正在查找...</span>
+    </div>`;
   }
   document.getElementById('results').innerHTML = html;
+
+  // 异步解析歌曲 URL，更新按钮
+  for (let i = 0; i < cards.length; i++) {
+    const url = await resolveSongUrl(cards[i].song, cards[i].artist);
+    const btnEl = document.getElementById(`btn-${i}`);
+    if (btnEl) {
+      btnEl.outerHTML = `<a class="listen-btn" href="${url}" target="_blank" rel="noopener">▶ 去听</a>`;
+    }
+  }
 }
 
 document.getElementById('stateInput').addEventListener('keydown', function(e) {
