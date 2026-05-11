@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clear-music · AI DJ</title>
+<style>
+  :root {
+    --bg: #05050a;
+    --surface: #0d0d18;
+    --border: #1a1a35;
+    --text: #c8c8e0;
+    --text-dim: #5a5a80;
+    --cyan: #00f0ff;
+    --cyan-glow: rgba(0, 240, 255, 0.2);
+    --pink: #ff2d95;
+    --pink-glow: rgba(255, 45, 149, 0.15);
+    --yellow: #ffe600;
+    --warn: #ff6b6b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow-x: hidden; }
+
+  /* 扫描线覆盖 */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  body {
+    font-family: "SF Mono", "Cascadia Code", "Consolas", "PingFang SC", "Microsoft YaHei", monospace;
+    background: var(--bg);
+    background-image:
+      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 30px 20px;
+  }
+  .app {
+    width: 100%;
+    max-width: 540px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 36px 30px;
+    position: relative;
+    box-shadow:
+      0 0 30px rgba(0, 240, 255, 0.06),
+      inset 0 0 30px rgba(0, 0, 0, 0.4);
+    clip-path: polygon(
+      0 12px, 12px 0, calc(100% - 12px) 0, 100% 12px,
+      100% calc(100% - 12px), calc(100% - 12px) 100%,
+      12px 100%, 0 calc(100% - 12px)
+    );
+  }
+  /* 四角装饰括号 */
+  .app::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: 20px; right: 20px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  }
+  .app::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 20px; right: 20px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--pink), transparent);
+  }
+
+  h1 {
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    text-align: center;
+    color: var(--cyan);
+    margin-bottom: 4px;
+    text-shadow: 0 0 20px var(--cyan-glow), 0 0 60px rgba(0,240,255,0.1);
+    text-transform: uppercase;
+  }
+  .tagline {
+    text-align: center;
+    font-size: 12px;
+    color: var(--pink);
+    margin-bottom: 28px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px var(--pink-glow);
+  }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .presets button {
+    flex: 1;
+    min-width: 65px;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    letter-spacing: 1px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: rgba(0, 240, 255, 0.03);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.25s;
+    white-space: nowrap;
+    text-transform: uppercase;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  }
+  .presets button:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(0, 240, 255, 0.1);
+    box-shadow: 0 0 12px var(--cyan-glow);
+    text-shadow: 0 0 8px var(--cyan);
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .input-row input {
+    flex: 1;
+    padding: 14px 16px;
+    font-size: 14px;
+    font-family: inherit;
+    letter-spacing: 1px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--cyan);
+    outline: none;
+    transition: all 0.3s;
+    caret-color: var(--cyan);
+  }
+  .input-row input:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 16px var(--cyan-glow), inset 0 0 16px rgba(0,240,255,0.03);
+  }
+  .input-row input::placeholder { color: rgba(90, 90, 128, 0.6); }
+  .input-row button {
+    padding: 14px 28px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    letter-spacing: 2px;
+    border: 2px solid var(--cyan);
+    border-radius: 2px;
+    background: rgba(0, 240, 255, 0.08);
+    color: var(--cyan);
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+  }
+  .input-row button::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0,240,255,0.2), transparent);
+    transition: left 0.4s;
+  }
+  .input-row button:hover::before { left: 100%; }
+  .input-row button:hover {
+    background: rgba(0, 240, 255, 0.15);
+    box-shadow: 0 0 24px var(--cyan-glow), 0 0 60px rgba(0,240,255,0.1);
+    text-shadow: 0 0 10px var(--cyan);
+  }
+  .input-row button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .results { min-height: 80px; }
+  .card {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--cyan);
+    border-radius: 2px;
+    padding: 20px;
+    margin-bottom: 14px;
+    transition: all 0.3s;
+    position: relative;
+  }
+  .card:nth-child(2) { border-left-color: var(--pink); }
+  .card:hover {
+    border-color: rgba(0, 240, 255, 0.4);
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.06), inset 0 0 20px rgba(0, 240, 255, 0.02);
+  }
+  .card:nth-child(2):hover {
+    border-color: rgba(255, 45, 149, 0.4);
+    box-shadow: 0 0 20px rgba(255, 45, 149, 0.06), inset 0 0 20px rgba(255, 45, 149, 0.02);
+  }
+  .card .reason {
+    font-size: 13px;
+    color: var(--cyan);
+    line-height: 1.8;
+    margin-bottom: 10px;
+    padding-left: 4px;
+    position: relative;
+  }
+  .card .reason::before {
+    content: '> ';
+    color: var(--pink);
+    font-weight: 700;
+  }
+  .card:nth-child(2) .reason { color: var(--text); }
+  .card .song {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 8px rgba(0,240,255,0.15);
+  }
+  .card .artist {
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .card .listen-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    font-size: 11px;
+    font-family: inherit;
+    letter-spacing: 2px;
+    border: 1px solid var(--cyan);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--cyan);
+    cursor: pointer;
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  .card:nth-child(2) .listen-btn { border-color: var(--pink); color: var(--pink); }
+  .card .listen-btn:hover {
+    background: var(--cyan);
+    color: #000;
+    box-shadow: 0 0 20px var(--cyan-glow);
+  }
+  .card:nth-child(2) .listen-btn:hover {
+    background: var(--pink);
+    box-shadow: 0 0 20px var(--pink-glow);
+  }
+  .card .listen-btn-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--text-dim);
+  }
+  .spinner {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--cyan);
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px var(--cyan-glow);
+  }
+  .spinner::after {
+    content: '';
+    display: block;
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--border);
+    border-top-color: var(--cyan);
+    border-right-color: var(--pink);
+    border-radius: 50%;
+    margin: 14px auto 0;
+    animation: spin 1s linear infinite;
+    box-shadow: 0 0 16px var(--cyan-glow);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error {
+    text-align: center;
+    padding: 24px;
+    color: var(--warn);
+    font-size: 13px;
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    background: rgba(255, 107, 107, 0.04);
+    border-radius: 2px;
+    text-shadow: 0 0 8px rgba(255,107,107,0.3);
+  }
+  .settings-toggle {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+    text-transform: uppercase;
+    transition: color 0.3s;
+  }
+  .settings-toggle:hover { color: var(--yellow); text-shadow: 0 0 8px rgba(255,230,0,0.3); }
+  .settings {
+    display: none;
+    margin-top: 16px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+  .settings.open { display: block; }
+  .settings label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    margin-top: 12px;
+    text-transform: uppercase;
+  }
+  .settings label:first-child { margin-top: 0; }
+  .settings input, .settings select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    letter-spacing: 1px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  .settings input:focus, .settings select:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan-glow);
+  }
+  .settings small {
+    display: block;
+    margin-top: 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+  .footer {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Clear-music</h1>
+  <p class="tagline">AI DJ · 不灌鸡汤 · 只推好歌</p>
+
+  <div class="presets">
+    <button onclick="setState('下班了，好累')">下班好累</button>
+    <button onclick="setState('刚起床，还没清醒')">起床困难</button>
+    <button onclick="setState('在通勤路上')">通勤路上</button>
+    <button onclick="setState('深夜加班中')">深夜加班</button>
+    <button onclick="setState('心情有点烦躁')">心浮气躁</button>
+  </div>
+
+  <div class="input-row">
+    <input type="text" id="stateInput" placeholder="说说你现在什么状态…" autofocus>
+    <button id="goBtn" onclick="recommend()">推荐</button>
+  </div>
+
+  <div class="results" id="results"></div>
+
+  <div class="settings-toggle" onclick="toggleSettings()">⚙ 设置 API</div>
+  <div class="settings" id="settings">
+    <label>API 端点</label>
+    <select id="apiEndpoint" onchange="saveSettings()">
+      <option value="deepseek">DeepSeek (Anthropic 兼容)</option>
+      <option value="anthropic">Anthropic 官方</option>
+      <option value="custom">自定义端点</option>
+    </select>
+    <label id="customUrlLabel" style="display:none;">自定义端点 URL</label>
+    <input type="text" id="customUrl" placeholder="https://api.example.com/anthropic" style="display:none;" onchange="saveSettings()">
+    <label>API Key</label>
+    <input type="password" id="apiKey" placeholder="输入你的 API Key…" onchange="saveSettings()">
+    <label>模型</label>
+    <input type="text" id="model" placeholder="deepseek-v4-pro" onchange="saveSettings()">
+    <label>听歌平台</label>
+    <select id="musicPlatform" onchange="saveSettings()">
+      <option value="netease">网易云音乐</option>
+      <option value="qq">QQ音乐</option>
+    </select>
+    <small>API Key 仅存储在浏览器本地，不会上传到任何服务器。</small>
+  </div>
+
+  <p class="footer">Powered by Claude / DeepSeek</p>
+</div>
+
+<script>
+const DEEPSEEK_URL = 'https://api.deepseek.com/anthropic';
+const ANTHROPIC_URL = 'https://api.anthropic.com';
+
+function loadSettings() {
+  const ep = localStorage.getItem('dj_endpoint') || 'deepseek';
+  const key = localStorage.getItem('dj_api_key') || '';
+  const model = localStorage.getItem('dj_model') || 'deepseek-v4-pro';
+  const platform = localStorage.getItem('dj_platform') || 'netease';
+  const customUrl = localStorage.getItem('dj_custom_url') || '';
+  document.getElementById('apiEndpoint').value = ep;
+  document.getElementById('apiKey').value = key;
+  document.getElementById('model').value = model;
+  document.getElementById('musicPlatform').value = platform;
+  document.getElementById('customUrl').value = customUrl;
+  if (ep === 'custom') {
+    document.getElementById('customUrlLabel').style.display = 'block';
+    document.getElementById('customUrl').style.display = 'block';
+  }
+}
+
+function saveSettings() {
+  const ep = document.getElementById('apiEndpoint').value;
+  localStorage.setItem('dj_endpoint', ep);
+  localStorage.setItem('dj_api_key', document.getElementById('apiKey').value);
+  localStorage.setItem('dj_model', document.getElementById('model').value);
+  localStorage.setItem('dj_platform', document.getElementById('musicPlatform').value);
+  localStorage.setItem('dj_custom_url', document.getElementById('customUrl').value);
+
+  const isCustom = ep === 'custom';
+  document.getElementById('customUrlLabel').style.display = isCustom ? 'block' : 'none';
+  document.getElementById('customUrl').style.display = isCustom ? 'block' : 'none';
+}
+
+function getApiUrl() {
+  const ep = localStorage.getItem('dj_endpoint') || 'deepseek';
+  if (ep === 'deepseek') return DEEPSEEK_URL;
+  if (ep === 'anthropic') return ANTHROPIC_URL;
+  return localStorage.getItem('dj_custom_url') || '';
+}
+
+function toggleSettings() {
+  document.getElementById('settings').classList.toggle('open');
+}
+
+function setState(text) {
+  document.getElementById('stateInput').value = text;
+  recommend();
+}
+
+async function recommend() {
+  const state = document.getElementById('stateInput').value.trim();
+  if (!state) return;
+
+  const apiKey = localStorage.getItem('dj_api_key') || '';
+  if (!apiKey) {
+    document.getElementById('settings').classList.add('open');
+    document.getElementById('results').innerHTML =
+      '<div class="error">请先在下方设置 API Key</div>';
+    return;
+  }
+
+  const btn = document.getElementById('goBtn');
+  btn.disabled = true;
+  btn.textContent = '...';
+  document.getElementById('results').innerHTML = '<div class="spinner">正在为你找歌</div>';
+
+  const model = localStorage.getItem('dj_model') || 'deepseek-v4-pro';
+
+  const systemPrompt = `你是一个懂音乐的 AI DJ，代号"Clear-music"。
+
+根据用户的输入，分析其当下的精力、情绪和场景，推荐 2 首符合"清醒、有能量、不麻木"调性的歌曲。
+
+输出格式：
+每条推荐用 "---" 分隔，每条包含三行：
+- 推荐理由：（50字以内，有温度、有态度，不说废话，不灌鸡汤，要像朋友在耳边说话）
+- 歌曲名称：
+- 歌手：
+
+推荐原则：
+1. 曲风不限，但必须让人"醒"——可以是节奏感、可以是歌词的锐度、可以是氛围的冷冽
+2. 避免过于丧或过于甜腻的歌
+3. 优先推荐有真实情感底色的歌曲，而非纯工业流水线作品
+4. 中英文不限，兼顾华语与国际流行
+5. 如果用户状态明显疲惫/焦虑/浮躁，推荐理由中要包含一个微小的"行动暗示"（例如：站起来听、闭眼听前奏、跟着打拍子）
+
+禁止：
+- 输出多余的客套话
+- 输出歌单或多个选项之外的冗余内容
+- 解释你为什么推荐某首歌
+- 输出超过 2 首推荐
+
+只输出推荐内容，不要任何开场白或结束语。`;
+
+  try {
+    const res = await fetch(`${getApiUrl()}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: model,
+        max_tokens: 800,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: state }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`API 错误 (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    const textBlock = data.content.find(c => c.type === 'text');
+    const text = textBlock ? textBlock.text : '';
+    renderResults(text);
+  } catch (e) {
+    let msg = e.message.replace(/</g, '&lt;');
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+      msg = '无法连接 API（CORS 限制）。请勿直接双击打开此文件，改用 <code>start-server.bat</code> 启动本地服务器后访问 http://localhost:8080';
+    }
+    document.getElementById('results').innerHTML =
+      '<div class="error">请求失败：' + msg + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '推荐';
+  }
+}
+
+function isMobile() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function getListenUrl(song, artist) {
+  const platform = localStorage.getItem('dj_platform') || 'netease';
+  const query = encodeURIComponent(`${song} ${artist}`);
+  const mobile = isMobile();
+
+  if (platform === 'qq') {
+    const webUrl = `https://y.qq.com/portal/search.html#page=1&searchid=1&t=song&w=${query}`;
+    if (mobile) return `qqmusic://qq.com/ui/openUrl?p=${encodeURIComponent(webUrl)}`;
+    return webUrl;
+  }
+  // netease
+  const webUrl = `https://music.163.com/#/search/m/?s=${query}`;
+  if (mobile) return `orpheus://search?keyword=${query}`;
+  return webUrl;
+}
+
+function renderResults(text) {
+  // Remove any leading/trailing non-recommendation content
+  let cleaned = text;
+  // Try to find first recommendation
+  const reasonIdx = cleaned.indexOf('推荐理由');
+  if (reasonIdx > 0) cleaned = cleaned.substring(reasonIdx);
+  // Remove trailing explanations
+  const lastArtistIdx = cleaned.lastIndexOf('歌手');
+  if (lastArtistIdx >= 0) {
+    const afterArtist = cleaned.substring(lastArtistIdx);
+    const newlineAfter = afterArtist.indexOf('\n');
+    if (newlineAfter >= 0) {
+      cleaned = cleaned.substring(0, lastArtistIdx + newlineAfter);
+    }
+  }
+
+  const blocks = cleaned.split(/\n---\n|^---\n|\n---$|---/).map(b => b.trim()).filter(b => b.length > 5);
+  let html = '';
+  let debugRaw = '';
+
+  for (const block of blocks) {
+    const lines = block.split('\n').filter(l => l.trim());
+    let reason = '', song = '', artist = '';
+    for (const line of lines) {
+      const t = line.trim();
+      if (t.includes('推荐理由')) {
+        reason = t.replace(/^[-*]*\s*推荐理由[：:]\s*/, '').trim();
+      } else if (t.includes('歌曲名称')) {
+        song = t.replace(/^[-*]*\s*歌曲名称[：:]\s*/, '').trim();
+      } else if (t.includes('歌手')) {
+        artist = t.replace(/^[-*]*\s*歌手[：:]\s*/, '').trim();
+      }
+    }
+    if (reason && song && artist) {
+      const idx = html.match(/<div class="card">/g)?.length || 0;
+      html += `<div class="card" data-song="${song.replace(/"/g, '&quot;')}" data-artist="${artist.replace(/"/g, '&quot;')}" data-idx="${idx}">
+        <div class="reason">${reason}</div>
+        <div class="song">${song}</div>
+        <div class="artist">${artist}</div>
+        <span class="listen-btn listen-btn-loading">⏳ 解析中...</span>
+      </div>`;
+    } else {
+      debugRaw += block.substring(0, 200) + '\\n---\\n';
+    }
+  }
+  if (!html) {
+    html = '<div class="error">解析推荐结果失败<br><br><small style="color:#6b6b7b;">API 返回原文：<br>' +
+      text.replace(/</g, '&lt;').replace(/\n/g, '<br>').substring(0, 500) +
+      '</small></div>';
+  }
+  document.getElementById('results').innerHTML = html;
+
+  // 异步解析每首歌的平台 ID
+  document.querySelectorAll('.card[data-song]').forEach(card => {
+    resolveSongCard(card);
+  });
+}
+
+async function resolveSongCard(card) {
+  const song = card.dataset.song;
+  const artist = card.dataset.artist;
+  const platform = localStorage.getItem('dj_platform') || 'netease';
+  const mobile = isMobile();
+
+  try {
+    const resp = await fetch(`/api/search?platform=${platform}&song=${encodeURIComponent(song)}&artist=${encodeURIComponent(artist)}`);
+    const data = await resp.json();
+
+    const btn = card.querySelector('.listen-btn-loading');
+    if (!btn) return;
+
+    if (data.found && data.url) {
+      // 用歌曲 ID 精准跳转
+      btn.className = 'listen-btn';
+      btn.textContent = '▶ 去听';
+      btn.outerHTML = `<a class="listen-btn" href="${data.url}" target="_blank" rel="noopener">▶ 去听</a>`;
+    } else {
+      // 未匹配到，降级为搜索链接
+      const fallbackUrl = getListenUrl(song, artist);
+      btn.className = 'listen-btn';
+      btn.textContent = '▶ 搜索';
+      btn.outerHTML = `<a class="listen-btn" href="${fallbackUrl}" target="_blank" rel="noopener">▶ 搜索</a>`;
+    }
+  } catch (e) {
+    // 网络错误，降级
+    const btn = card.querySelector('.listen-btn-loading');
+    if (btn) {
+      const fallbackUrl = getListenUrl(song, artist);
+      btn.className = 'listen-btn';
+      btn.textContent = '▶ 搜索';
+      btn.outerHTML = `<a class="listen-btn" href="${fallbackUrl}" target="_blank" rel="noopener">▶ 搜索</a>`;
+    }
+  }
+}
+
+document.getElementById('stateInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') recommend();
+});
+
+loadSettings();
+saveSettings();
+</script>
+</body>
+</html>
